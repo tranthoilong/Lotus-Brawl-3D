@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Octo-Sen 2.0: Đại Chiến Đầm Sen 3D</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        body { overflow: hidden; background-color: #1a2a3a; }
+        #game-canvas { display: block; width: 100vw; height: 100vh; }
+        
+        /* Lớp nhãn tên nổi 2D bám theo nhân vật 3D */
+        #labels-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; overflow: hidden; z-index: 2;
+        }
+        .char-label {
+            position: absolute; transform: translate(-50%, -100%);
+            white-space: nowrap; font-weight: 800; font-size: 13px;
+            padding: 4px 10px; border-radius: 12px;
+            transition: opacity 0.15s;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .char-label.is-player {
+            background: linear-gradient(135deg, #ffd32a, #ffa801);
+            color: #1e272e; font-size: 15px; font-weight: 900;
+            border: 3px solid #ffffff;
+            box-shadow: 0 4px 15px rgba(255, 168, 1, 0.7);
+            animation: bounceTag 0.8s infinite alternate ease-in-out;
+        }
+        .char-label.is-bot {
+            background: rgba(20, 30, 45, 0.75);
+            color: #ffffff; border: 1.5px solid rgba(255,255,255,0.4);
+            backdrop-filter: blur(4px);
+        }
+        .arrow-down {
+            width: 0; height: 0;
+            border-left: 7px solid transparent; border-right: 7px solid transparent;
+            border-top: 8px solid #ffffff; margin-top: 2px;
+        }
+        @keyframes bounceTag {
+            from { transform: translate(-50%, -100%) translateY(0px); }
+            to { transform: translate(-50%, -100%) translateY(-7px); }
+        }
+
+        /* Giao diện người dùng (UI) */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; flex-direction: column; justify-content: space-between;
+            padding: 20px; z-index: 5;
+        }
+        .hud-top { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; }
+        .score-board { display: flex; gap: 14px; flex-wrap: wrap; }
+        .score-card {
+            background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(8px);
+            padding: 10px 18px; border-radius: 18px; box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+            display: flex; align-items: center; gap: 10px; border: 3px solid #fff;
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .score-card.is-me {
+            border-color: #ffd32a; background: #fff9e6;
+            box-shadow: 0 6px 20px rgba(255, 211, 42, 0.4);
+        }
+        .score-card.active-bump { transform: scale(1.22); }
+        .color-dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2); }
+        .player-name { font-weight: 800; color: #2c3e50; font-size: 14px; }
+        .player-score { font-weight: 900; font-size: 20px; color: #e74c3c; }
+
+        .top-right-controls {
+            display: flex; gap: 10px; pointer-events: auto;
+        }
+        .hud-btn {
+            background: rgba(255,255,255,0.9); color: #2c3e50; border: 2px solid #fff;
+            padding: 10px 16px; border-radius: 14px; font-weight: 800; font-size: 14px;
+            cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: 0.15s;
+        }
+        .hud-btn:hover { transform: translateY(-2px); background: #fff; }
+
+        .controls-hint {
+            align-self: center; background: rgba(0, 0, 0, 0.6); color: #fff;
+            padding: 10px 24px; border-radius: 30px; font-weight: 600; font-size: 14px;
+            backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.2);
+            text-align: center;
+        }
+        .key {
+            background: #fff; color: #2c3e50; padding: 2px 7px; border-radius: 5px;
+            font-weight: 800; margin: 0 2px; box-shadow: 0 2px 0 #bdc3c7; display: inline-block;
+        }
+
+        /* Màn hình chọn Map & Bắt đầu */
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 32, 45, 0.8); backdrop-filter: blur(8px);
+            display: flex; align-items: center; justify-content: center; z-index: 20;
+        }
+        .modal {
+            background: linear-gradient(145deg, #ffffff, #f0f4f8);
+            padding: 32px 40px; border-radius: 32px; text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.4); max-width: 680px; width: 92%;
+            border: 5px solid #ff9ff3; animation: popIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes popIn { from { transform: scale(0.75); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .modal h1 { font-size: 32px; color: #ff6b81; margin-bottom: 6px; text-shadow: 0 2px 0 #ffeaa7; }
+        .modal p { font-size: 15px; color: #576574; margin-bottom: 18px; }
+
+        /* Lưới chọn Map */
+        .map-grid {
+            display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
+            margin-bottom: 24px; text-align: left;
+        }
+        .map-card {
+            background: #ffffff; border: 3px solid #dfe6e9; border-radius: 18px;
+            padding: 12px 16px; cursor: pointer; transition: all 0.15s;
+            display: flex; align-items: center; gap: 12px; pointer-events: auto;
+        }
+        .map-card:hover { border-color: #74b9ff; transform: translateY(-2px); }
+        .map-card.selected {
+            border-color: #ff6b81; background: #fff0f3;
+            box-shadow: 0 6px 15px rgba(255, 107, 129, 0.25);
+        }
+        .map-icon { font-size: 32px; }
+        .map-info h3 { font-size: 16px; color: #2d3436; margin-bottom: 2px; }
+        .map-info span { font-size: 12px; color: #636e72; display: block; line-height: 1.3; }
+
+        .btn {
+            background: linear-gradient(to bottom, #ff6b81, #ee5253); color: white;
+            border: none; padding: 15px 42px; font-size: 19px; font-weight: 800;
+            border-radius: 50px; cursor: pointer; box-shadow: 0 6px 0 #c23616, 0 12px 20px rgba(238,82,83,0.4);
+            transition: all 0.1s; pointer-events: auto;
+        }
+        .btn:hover { transform: translateY(-2px); filter: brightness(1.05); }
+        .btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #c23616; }
+
+        /* Thanh Cooldown Dash */
+        #dash-bar-container {
+            position: absolute; bottom: 75px; left: 50%; transform: translateX(-50%);
+            width: 180px; height: 14px; background: rgba(0,0,0,0.45);
+            border-radius: 10px; overflow: hidden; border: 2px solid #fff;
+        }
+        #dash-bar { width: 100%; height: 100%; background: linear-gradient(90deg, #ffd32a, #ff9f43); transition: width 0.05s; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <canvas id="game-canvas"></canvas>
+    <div id="labels-container"></div>
+
+    <div id="ui-layer">
+        <div class="hud-top">
+            <div class="score-board" id="scoreboard"></div>
+            <div class="top-right-controls">
+                <button class="hud-btn" id="change-map-btn">🗺️ ĐỔI MAP KHÁC</button>
+            </div>
+        </div>
+        <div id="dash-bar-container"><div id="dash-bar"></div></div>
+        <div class="controls-hint">
+            Bạn là <b style="color:#ffd32a">★ BÉ SEN HỒNG (Vòng Sáng Vàng)</b> &nbsp;|&nbsp;
+            Di chuyển: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> / <span class="key">Mũi Tên</span> &nbsp;|&nbsp; 
+            Húc (Dash): <span class="key">SPACE</span>
+        </div>
+    </div>
+
+    <div id="overlay">
+        <div class="modal">
+            <h1 id="modal-title">🐙 ĐẠI CHIẾN ĐẦM SEN 2.0 🌸</h1>
+            <p id="modal-desc">Chọn bản đồ yêu thích và húc văng các Bot xuống nước! Ai đạt <b>5 điểm</b> trước sẽ thắng.</p>
+            
+            <div class="map-grid" id="map-selector">
+                <div class="map-card selected" data-map="0">
+                    <div class="map-icon">🌸</div>
+                    <div class="map-info">
+                        <h3>1. Đầm Sen Cổ Điển</h3>
+                        <span>Sân phẳng tiêu chuẩn, nắng ấm áp, dễ làm quen.</span>
+                    </div>
+                </div>
+                <div class="map-card" data-map="1">
+                    <div class="map-icon">🐸</div>
+                    <div class="map-info">
+                        <h3>2. Đài Phun Cóc Vàng</h3>
+                        <span>Cóc Vàng giữa sân sẽ hất văng cực mạnh ai chạm vào!</span>
+                    </div>
+                </div>
+                <div class="map-card" data-map="2">
+                    <div class="map-icon">🌀</div>
+                    <div class="map-info">
+                        <h3>3. Bể Xoáy Nước</h3>
+                        <span>Sàn trơn trượt kèm dòng nước xoáy cuốn quanh tâm.</span>
+                    </div>
+                </div>
+                <div class="map-card" data-map="3">
+                    <div class="map-icon">⚠️</div>
+                    <div class="map-info">
+                        <h3>4. Lá Sen Mục Nát</h3>
+                        <span>Lá sen thu nhỏ dần theo thời gian, cực kỳ kịch tính!</span>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn" id="start-btn">VÀO TRẬN NGAY</button>
+        </div>
+    </div>
+
+<script>
+/**
+ * HỆ THỐNG ÂM THANH (Web Audio API)
+ */
+class SoundFX {
+    constructor() { this.ctx = null; }
+    init() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+    playBump(power = 1) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator(), gain = this.ctx.createGain(), now = this.ctx.currentTime;
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150 * power, now);
+        osc.frequency.exponentialRampToValueAtTime(45, now + 0.18);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(now); osc.stop(now + 0.18);
+    }
+    playDash() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator(), gain = this.ctx.createGain(), now = this.ctx.currentTime;
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(240, now);
+        osc.frequency.exponentialRampToValueAtTime(560, now + 0.15);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(now); osc.stop(now + 0.15);
+    }
+    playSplash() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator(), gain = this.ctx.createGain(), now = this.ctx.currentTime;
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.exponentialRampToValueAtTime(55, now + 0.35);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(now); osc.stop(now + 0.35);
+    }
+    playPowerup() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator(), gain = this.ctx.createGain(), now = this.ctx.currentTime;
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(400, now);
+        osc.frequency.setValueAtTime(600, now + 0.08);
+        osc.frequency.setValueAtTime(850, now + 0.16);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(now); osc.stop(now + 0.3);
+    }
+}
+const sfx = new SoundFX();
+
+/**
+ * KHỞI TẠO SCENE 3D
+ */
+const canvas = document.getElementById('game-canvas');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x74b9ff);
+scene.fog = new THREE.FogExp2(0x74b9ff, 0.011);
+
+const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 200);
+const cameraBasePos = new THREE.Vector3(0, 26, 28);
+camera.position.copy(cameraBasePos);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+// Ánh sáng
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x0984e3, 0.75);
+hemiLight.position.set(0, 50, 0);
+scene.add(hemiLight);
+
+const dirLight = new THREE.DirectionalLight(0xfff5e6, 0.9);
+dirLight.position.set(18, 35, 20);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+const d = 22;
+dirLight.shadow.camera.left = -d; dirLight.shadow.camera.right = d;
+dirLight.shadow.camera.top = d; dirLight.shadow.camera.bottom = -d;
+dirLight.shadow.bias = -0.0005;
+scene.add(dirLight);
+
+/**
+ * MÔI TRƯỜNG & HỆ THỐNG 4 BẢN ĐỒ (MAPS)
+ */
+const BASE_ARENA_RADIUS = 14.0;
+let currentArenaRadius = BASE_ARENA_RADIUS;
+let selectedMapIndex = 0;
+
+const MAP_CONFIGS = [
+    {
+        name: "Đầm Sen Cổ Điển",
+        skyColor: 0x74b9ff, waterColor: 0x00a8ff, padColor: 0x2ecc71, rimColor: 0x27ae60,
+        damping: 0.035, hasCenterBumper: false, hasWhirlpool: false, shrinkRate: 0
+    },
+    {
+        name: "Đài Phun Cóc Vàng",
+        skyColor: 0xffbe76, waterColor: 0x22a6b3, padColor: 0x6ab04c, rimColor: 0x4cd137,
+        damping: 0.035, hasCenterBumper: true, hasWhirlpool: false, shrinkRate: 0
+    },
+    {
+        name: "Bể Xoáy Nước",
+        skyColor: 0x1e3799, waterColor: 0x0c2461, padColor: 0x38ada9, rimColor: 0x079992,
+        damping: 0.09, hasCenterBumper: false, hasWhirlpool: true, shrinkRate: 0
+    },
+    {
+        name: "Lá Sen Mục Nát",
+        skyColor: 0xeb4d4b, waterColor: 0x30336b, padColor: 0xe58e26, rimColor: 0xb71540,
+        damping: 0.035, hasCenterBumper: false, hasWhirlpool: false, shrinkRate: 0.25
+    }
+];
+
+// Mặt nước
+const waterGeo = new THREE.PlaneGeometry(160, 160, 45, 45);
+waterGeo.rotateX(-Math.PI / 2);
+const waterMat = new THREE.MeshStandardMaterial({ color: 0x00a8ff, roughness: 0.2, metalness: 0.1, flatShading: true });
+const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+waterMesh.position.y = -0.8;
+waterMesh.receiveShadow = true;
+scene.add(waterMesh);
+
+// Đấu trường Lá Sen
+const arenaGroup = new THREE.Group();
+scene.add(arenaGroup);
+
+const lilyGeo = new THREE.CylinderGeometry(BASE_ARENA_RADIUS, BASE_ARENA_RADIUS * 0.95, 0.8, 48, 1, false, 0.15, Math.PI * 2 - 0.3);
+const lilyMat = new THREE.MeshStandardMaterial({ color: 0x2ecc71, roughness: 0.6 });
+const lilyPad = new THREE.Mesh(lilyGeo, lilyMat);
+lilyPad.position.y = -0.4;
+lilyPad.receiveShadow = true;
+lilyPad.castShadow = true;
+arenaGroup.add(lilyPad);
+
+const rimGeo = new THREE.TorusGeometry(BASE_ARENA_RADIUS - 0.2, 0.28, 12, 48, Math.PI * 2 - 0.35);
+rimGeo.rotateX(Math.PI / 2);
+rimGeo.rotateZ(0.175);
+const rimMat = new THREE.MeshStandardMaterial({ color: 0x27ae60, roughness: 0.5 });
+const rimMesh = new THREE.Mesh(rimGeo, rimMat);
+rimMesh.position.y = 0.05;
+rimMesh.receiveShadow = true;
+arenaGroup.add(rimMesh);
+
+// Gân lá sen
+for (let i = 0; i < 10; i++) {
+    const angle = 0.4 + (i / 10) * (Math.PI * 2 - 0.8);
+    const vein = new THREE.Mesh(new THREE.BoxGeometry(BASE_ARENA_RADIUS - 1, 0.08, 0.15), rimMat);
+    vein.position.set(Math.cos(angle) * (BASE_ARENA_RADIUS / 2), 0.02, Math.sin(angle) * (BASE_ARENA_RADIUS / 2));
+    vein.rotation.y = -angle;
+    arenaGroup.add(vein);
+}
+
+// Chướng ngại vật Map 2: Tượng Cóc Vàng Nảy (Center Bumper)
+const frogBumperGroup = new THREE.Group();
+const frogBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.3, 2.5, 0.6, 24),
+    new THREE.MeshStandardMaterial({ color: 0xd35400, roughness: 0.4 })
+);
+frogBase.position.y = 0.3;
+frogBumperGroup.add(frogBase);
+
+const frogBodyMat = new THREE.MeshStandardMaterial({ color: 0xf1c40f, metalness: 0.4, roughness: 0.2 });
+const frogBody = new THREE.Mesh(new THREE.SphereGeometry(1.7, 24, 24), frogBodyMat);
+frogBody.scale.set(1.1, 0.85, 1.1);
+frogBody.position.y = 1.3;
+frogBody.castShadow = true;
+frogBumperGroup.add(frogBody);
+
+// Mắt Cóc Vàng
+[-0.7, 0.7].forEach(x => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 16), frogBodyMat);
+    eye.position.set(x, 2.3, 0.8);
+    frogBumperGroup.add(eye);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), new THREE.MeshBasicMaterial({ color: 0xc0392b }));
+    pupil.position.set(x, 2.35, 1.15);
+    frogBumperGroup.add(pupil);
+});
+// Vòng cảnh báo nảy xung quanh Cóc
+const bumperRing = new THREE.Mesh(
+    new THREE.TorusGeometry(2.4, 0.15, 12, 32),
+    new THREE.MeshBasicMaterial({ color: 0xff3f34 })
+);
+bumperRing.rotateX(Math.PI / 2);
+bumperRing.position.y = 0.2;
+frogBumperGroup.add(bumperRing);
+frogBumperGroup.visible = false;
+scene.add(frogBumperGroup);
+
+// Hiệu ứng Xoáy Nước Map 3 (Whirlpool Swirl)
+const swirlGroup = new THREE.Group();
+for (let r = 3; r <= 11; r += 2.5) {
+    const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(r, 0.08, 8, 36, Math.PI * 1.3),
+        new THREE.MeshBasicMaterial({ color: 0x82ccdd, transparent: true, opacity: 0.65 })
+    );
+    ring.rotateX(Math.PI / 2);
+    ring.rotation.z = r;
+    ring.position.y = 0.08;
+    swirlGroup.add(ring);
+}
+swirlGroup.visible = false;
+scene.add(swirlGroup);
+
+// Áp dụng cài đặt Map
+function applyMapConfig(mapIdx) {
+    const cfg = MAP_CONFIGS[mapIdx];
+    scene.background.setHex(cfg.skyColor);
+    scene.fog.color.setHex(cfg.skyColor);
+    waterMat.color.setHex(cfg.waterColor);
+    lilyMat.color.setHex(cfg.padColor);
+    rimMat.color.setHex(cfg.rimColor);
+
+    currentArenaRadius = BASE_ARENA_RADIUS;
+    arenaGroup.scale.set(1, 1, 1);
+
+    frogBumperGroup.visible = cfg.hasCenterBumper;
+    swirlGroup.visible = cfg.hasWhirlpool;
+}
+
+// Hoa sen trang trí xung quanh hồ
+function createLotusFlower(x, z, scale = 1) {
+    const group = new THREE.Group();
+    const smallPad = new THREE.Mesh(
+        new THREE.CylinderGeometry(2.2 * scale, 2.2 * scale, 0.2, 16),
+        new THREE.MeshStandardMaterial({ color: 0x26de81 })
+    );
+    smallPad.position.y = -0.7;
+    group.add(smallPad);
+
+    const petalMat = new THREE.MeshStandardMaterial({ color: 0xff9ff3, roughness: 0.3 });
+    for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        const petal = new THREE.Mesh(new THREE.ConeGeometry(0.5 * scale, 1.4 * scale, 6), petalMat);
+        petal.position.set(Math.cos(angle) * 0.6 * scale, -0.3, Math.sin(angle) * 0.6 * scale);
+        petal.rotation.z = -Math.cos(angle) * 0.5;
+        petal.rotation.x = Math.sin(angle) * 0.5;
+        group.add(petal);
+    }
+    group.position.set(x, 0, z);
+    scene.add(group);
+    return group;
+}
+const bgFlowers = [
+    createLotusFlower(-20, -14, 1.3), createLotusFlower(22, -12, 1.1),
+    createLotusFlower(-18, 16, 1.0), createLotusFlower(20, 15, 1.4), createLotusFlower(0, -24, 1.5)
+];
+
+/**
+ * HỆ THỐNG HẠT (PARTICLES)
+ */
+const particles = [];
+const particleGeo = new THREE.SphereGeometry(0.25, 8, 8);
+function spawnParticles(pos, color, count = 12, speed = 8) {
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.4 });
+    for (let i = 0; i < count; i++) {
+        const mesh = new THREE.Mesh(particleGeo, mat);
+        mesh.position.copy(pos);
+        const angle = Math.random() * Math.PI * 2;
+        const up = Math.random() * speed * 0.8 + 2;
+        const out = Math.random() * speed;
+        scene.add(mesh);
+        particles.push({ mesh, vel: new THREE.Vector3(Math.cos(angle) * out, up, Math.sin(angle) * out), life: 1.0 });
+    }
+}
+
+/**
+ * TẠO NHÂN VẬT 3D & VÒNG SÁNG ĐỊNH VỊ NGƯỜI CHƠI
+ */
+function createOctoMesh(colorHex, isMainPlayer = false) {
+    const root = new THREE.Group();
+    const bodyGroup = new THREE.Group();
+    root.add(bodyGroup);
+
+    const mainMat = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        roughness: 0.25,
+        metalness: 0.05,
+        emissive: isMainPlayer ? 0xff4757 : 0x000000,
+        emissiveIntensity: isMainPlayer ? 0.15 : 0
+    });
+
+    // Đầu tròn mũm mĩm
+    const head = new THREE.Mesh(new THREE.SphereGeometry(1.05, 24, 24), mainMat);
+    head.position.y = 1.05;
+    head.castShadow = true; head.receiveShadow = true;
+    bodyGroup.add(head);
+
+    // 8 Xúc tu
+    for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        const tentacle = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 12), mainMat);
+        tentacle.position.set(Math.cos(angle) * 0.85, 0.35, Math.sin(angle) * 0.85);
+        tentacle.scale.set(1, 0.75, 1);
+        tentacle.castShadow = true;
+        bodyGroup.add(tentacle);
+    }
+
+    // Mắt to tròn
+    const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const eyeBlackMat = new THREE.MeshBasicMaterial({ color: 0x1e272e });
+    [-0.36, 0.36].forEach(xOffset => {
+        const white = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 16), eyeWhiteMat);
+        white.position.set(xOffset, 1.2, 0.88);
+        bodyGroup.add(white);
+        const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), eyeBlackMat);
+        pupil.position.set(xOffset, 1.22, 1.06);
+        bodyGroup.add(pupil);
+        const shine = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), eyeWhiteMat);
+        shine.position.set(xOffset + 0.06, 1.28, 1.15);
+        bodyGroup.add(shine);
+    });
+
+    // Má hồng & Miệng
+    const blushMat = new THREE.MeshBasicMaterial({ color: 0xff6b81 });
+    [-0.62, 0.62].forEach(xOffset => {
+        const blush = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), blushMat);
+        blush.scale.set(1.2, 0.6, 0.5);
+        blush.position.set(xOffset, 0.98, 0.82);
+        bodyGroup.add(blush);
+    });
+    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.05, 8, 16), mainMat);
+    mouth.position.set(0, 0.95, 1.02);
+    bodyGroup.add(mouth);
+
+    // Nón lá sen
+    const leafHat = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.65, 0.1, 0.15, 16),
+        new THREE.MeshStandardMaterial({ color: 0x2ecc71, roughness: 0.4 })
+    );
+    leafHat.position.y = 2.05;
+    leafHat.rotation.z = 0.15;
+    bodyGroup.add(leafHat);
+
+    let playerRing = null;
+    if (isMainPlayer) {
+        // Vương miện Vàng lớn trên đầu BẠN
+        const crown = new THREE.Mesh(
+            new THREE.ConeGeometry(0.38, 0.6, 8),
+            new THREE.MeshStandardMaterial({ color: 0xffd32a, emissive: 0xffa801, emissiveIntensity: 0.5 })
+        );
+        crown.position.set(0, 2.4, 0);
+        bodyGroup.add(crown);
+
+        // VÒNG HÀO QUANG VÀNG DƯỚI CHÂN + MŨI TÊN CHỈ HƯỚNG ĐI
+        playerRing = new THREE.Group();
+        const ringMesh = new THREE.Mesh(
+            new THREE.RingGeometry(1.35, 1.68, 32),
+            new THREE.MeshBasicMaterial({ color: 0xffd32a, side: THREE.DoubleSide })
+        );
+        ringMesh.rotateX(-Math.PI / 2);
+        playerRing.add(ringMesh);
+
+        // Mũi tên vàng phía trước mặt nhân vật
+        const arrowGeo = new THREE.ConeGeometry(0.42, 0.8, 3);
+        arrowGeo.rotateX(Math.PI / 2);
+        const arrowMesh = new THREE.Mesh(arrowGeo, new THREE.MeshBasicMaterial({ color: 0xffd32a }));
+        arrowMesh.position.set(0, 0.05, 1.95);
+        playerRing.add(arrowMesh);
+
+        playerRing.position.y = 0.06;
+        root.add(playerRing);
+    } else {
+        // Sừng nhỏ phân biệt Bot
+        const botAntenna = new THREE.Mesh(
+            new THREE.SphereGeometry(0.18, 8, 8),
+            new THREE.MeshBasicMaterial({ color: 0xdfe6e9 })
+        );
+        botAntenna.position.set(0, 2.25, 0);
+        bodyGroup.add(botAntenna);
+    }
+
+    return { root, bodyGroup, playerRing };
+}
+
+/**
+ * DỮ LIỆU NGƯỜI CHƠI, BOT & THẺ TÊN NỔI (FLOATING LABELS)
+ */
+const PLAYER_CONFIGS = [
+    { id: 0, name: "★ BẠN (BÉ SEN) ★", shortName: "BẠN (Bé Sen)", color: 0xff5e7e, hex: "#ff5e7e", isBot: false },
+    { id: 1, name: "🤖 Bot Xanh", shortName: "Bot Xanh", color: 0x0abde3, hex: "#0abde3", isBot: true },
+    { id: 2, name: "🤖 Bot Tím", shortName: "Bot Tím", color: 0x8854d0, hex: "#8854d0", isBot: true },
+    { id: 3, name: "🤖 Bot Cam", shortName: "Bot Cam", color: 0xfa8231, hex: "#fa8231", isBot: true }
+];
+
+const players = [];
+const labelsContainer = document.getElementById('labels-container');
+const WIN_SCORE = 5;
+let gameRunning = false;
+let screenShake = 0;
+
+PLAYER_CONFIGS.forEach((cfg, idx) => {
+    const { root, bodyGroup, playerRing } = createOctoMesh(cfg.color, !cfg.isBot);
+    scene.add(root);
+
+    // Tạo thẻ HTML nổi trên đầu mỗi nhân vật
+    const labelEl = document.createElement('div');
+    labelEl.className = `char-label ${cfg.isBot ? 'is-bot' : 'is-player'}`;
+    labelEl.innerHTML = `<span>${cfg.name}</span>${!cfg.isBot ? '<div class="arrow-down"></div>' : ''}`;
+    labelsContainer.appendChild(labelEl);
+
+    players.push({
+        ...cfg,
+        mesh: root,
+        body: bodyGroup,
+        playerRing,
+        labelEl,
+        pos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
+        radius: 1.15,
+        mass: 1.0,
+        score: 0,
+        dashCooldown: 0,
+        isFalling: false,
+        respawnTimer: 0,
+        lastHitBy: null,
+        powerupTimer: 0,
+        aiTimer: 0,
+        aiTarget: null,
+        squash: 1.0
+    });
+});
+
+function spawnCharacter(p, index) {
+    const angle = (index / players.length) * Math.PI * 2 + 0.4;
+    const safeDist = Math.min(7.0, currentArenaRadius - 3.0);
+    p.pos.set(Math.cos(angle) * safeDist, 0, Math.sin(angle) * safeDist);
+    p.vel.set(0, 0, 0);
+    p.isFalling = false;
+    p.lastHitBy = null;
+    p.powerupTimer = 0;
+    p.mass = 1.0;
+    p.radius = 1.15;
+    p.mesh.scale.set(1, 1, 1);
+    p.mesh.position.copy(p.pos);
+    p.mesh.rotation.set(0, Math.atan2(-p.pos.x, -p.pos.z), 0);
+    p.squash = 1.4;
+}
+
+// Cập nhật tọa độ nhãn 2D trên đầu nhân vật 3D
+const tempVec = new THREE.Vector3();
+function updateFloatingLabels() {
+    players.forEach(p => {
+        if (p.isFalling && p.pos.y < -3) {
+            p.labelEl.style.opacity = '0';
+            return;
+        }
+        p.labelEl.style.opacity = '1';
+        tempVec.copy(p.pos);
+        tempVec.y += (p.powerupTimer > 0 ? 4.2 : 3.1);
+        tempVec.project(camera);
+
+        const x = (tempVec.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-(tempVec.y * 0.5) + 0.5) * window.innerHeight;
+        p.labelEl.style.left = `${x}px`;
+        p.labelEl.style.top = `${y}px`;
+    });
+}
+
+/**
+ * VẬT PHẨM HẠT SEN HỒNG KHỔNG LỒ
+ */
+let powerupItem = { mesh: null, active: false, timer: 3.5, pos: new THREE.Vector3() };
+const gemGeo = new THREE.OctahedronGeometry(0.65, 1);
+const gemMat = new THREE.MeshStandardMaterial({ color: 0xff9ff3, emissive: 0xf368e0, emissiveIntensity: 0.5, roughness: 0.1 });
+powerupItem.mesh = new THREE.Mesh(gemGeo, gemMat);
+powerupItem.mesh.castShadow = true;
+powerupItem.mesh.visible = false;
+scene.add(powerupItem.mesh);
+
+function spawnPowerup() {
+    const angle = Math.random() * Math.PI * 2;
+    const minR = MAP_CONFIGS[selectedMapIndex].hasCenterBumper ? 3.5 : 1.0;
+    const maxR = Math.max(minR + 1, currentArenaRadius - 4.0);
+    const r = minR + Math.random() * (maxR - minR);
+    powerupItem.pos.set(Math.cos(angle) * r, 1.0, Math.sin(angle) * r);
+    powerupItem.mesh.position.copy(powerupItem.pos);
+    powerupItem.mesh.visible = true;
+    powerupItem.active = true;
+}
+
+/**
+ * ĐIỀU KHIỂN & GIAO DIỆN
+ */
+const keys = {};
+window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (e.code === 'Space' && gameRunning) triggerDash(players[0]);
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+function triggerDash(p) {
+    if (p.dashCooldown > 0 || p.isFalling) return;
+    p.dashCooldown = 1.5;
+    sfx.playDash();
+
+    let dir = new THREE.Vector3(p.vel.x, 0, p.vel.z);
+    if (dir.lengthSq() < 0.1) {
+        dir.set(Math.sin(p.mesh.rotation.y), 0, Math.cos(p.mesh.rotation.y));
+    } else {
+        dir.normalize();
+    }
+
+    const dashStrength = p.powerupTimer > 0 ? 28 : 23;
+    p.vel.addScaledVector(dir, dashStrength);
+    p.squash = 0.6;
+    spawnParticles(p.pos, 0xffffff, 8, 5);
+}
+
+const scoreboardEl = document.getElementById('scoreboard');
+function renderScoreboard(bumpId = -1) {
+    scoreboardEl.innerHTML = players.map(p => `
+        <div class="score-card ${!p.isBot ? 'is-me' : ''} ${p.id === bumpId ? 'active-bump' : ''}">
+            <div class="color-dot" style="background:${p.hex}"></div>
+            <span class="player-name">${p.shortName}</span>
+            <span class="player-score">${p.score} / ${WIN_SCORE}</span>
+        </div>
+    `).join('');
+}
+renderScoreboard();
+
+/**
+ * TRÍ TUỆ NHÂN TẠO (BOT AI)
+ */
+function updateBotAI(bot, dt) {
+    if (bot.isFalling) return;
+    bot.aiTimer -= dt;
+
+    // 1. Tránh mép vực
+    const distFromCenter = Math.hypot(bot.pos.x, bot.pos.z);
+    if (distFromCenter > currentArenaRadius - 2.6) {
+        const toCenter = new THREE.Vector3(-bot.pos.x, 0, -bot.pos.z).normalize();
+        bot.vel.addScaledVector(toCenter, 36 * dt);
+        if (distFromCenter > currentArenaRadius - 1.6 && bot.dashCooldown <= 0) triggerDash(bot);
+        return;
+    }
+
+    // 2. Nhặt Hạt Sen Hồng
+    if (powerupItem.active && bot.pos.distanceTo(powerupItem.pos) < 7.0) {
+        const toGem = new THREE.Vector3().subVectors(powerupItem.pos, bot.pos).normalize();
+        toGem.y = 0;
+        bot.vel.addScaledVector(toGem, 28 * dt);
+        return;
+    }
+
+    // 3. Săn mục tiêu
+    if (bot.aiTimer <= 0 || !bot.aiTarget || bot.aiTarget.isFalling) {
+        bot.aiTimer = 0.7 + Math.random() * 0.8;
+        const candidates = players.filter(other => other.id !== bot.id && !other.isFalling);
+        if (candidates.length > 0) {
+            candidates.sort((a, b) => Math.hypot(b.pos.x, b.pos.z) - Math.hypot(a.pos.x, a.pos.z));
+            bot.aiTarget = Math.random() < 0.65 ? candidates[0] : candidates[Math.floor(Math.random() * candidates.length)];
+        }
+    }
+
+    if (bot.aiTarget) {
+        const toTarget = new THREE.Vector3().subVectors(bot.aiTarget.pos, bot.pos);
+        toTarget.y = 0;
+        const dist = toTarget.length();
+        toTarget.normalize();
+        bot.vel.addScaledVector(toTarget, 26 * dt);
+
+        if (dist < 4.8 && dist > 1.8 && bot.dashCooldown <= 0 && Math.random() < 0.08) {
+            triggerDash(bot);
+        }
+    }
+}
+
+/**
+ * LOGIC CẬP NHẬT TRÒ CHƠI & CƠ CHẾ ĐẶC BIỆT CỦA TỪNG MAP
+ */
+const clock = new THREE.Clock();
+
+function checkWinner() {
+    const winner = players.find(p => p.score >= WIN_SCORE);
+    if (winner) {
+        gameRunning = false;
+        const overlay = document.getElementById('overlay');
+        document.getElementById('modal-title').innerText = winner.id === 0 ? "🏆 BẠN ĐÃ CHIẾN THẮNG! 🎉" : `🤖 ${winner.shortName.toUpperCase()} THẮNG!`;
+        document.getElementById('modal-desc').innerHTML = winner.id === 0 
+            ? "Quá xuất sắc! Chọn một bản đồ mới bên dưới để tiếp tục thử thách nhé!" 
+            : "Đừng nản lòng! Hãy thử đổi sang bản đồ khác hoặc căn phím <b>SPACE</b> chuẩn hơn nhé.";
+        document.getElementById('start-btn').innerText = "CHƠI VÁN MỚI";
+        overlay.style.display = 'flex';
+    }
+}
+
+function updateGame(dt) {
+    if (!gameRunning) return;
+    const mapCfg = MAP_CONFIGS[selectedMapIndex];
+
+    // Cơ chế Map 4: Lá Sen Mục Nát thu nhỏ dần
+    if (mapCfg.shrinkRate > 0 && currentArenaRadius > 5.8) {
+        currentArenaRadius -= mapCfg.shrinkRate * dt;
+        const scaleRatio = currentArenaRadius / BASE_ARENA_RADIUS;
+        arenaGroup.scale.set(scaleRatio, 1, scaleRatio);
+    }
+
+    // Hiệu ứng Map 3: Xoáy nước quay tròn
+    if (mapCfg.hasWhirlpool) {
+        swirlGroup.rotation.y -= 1.8 * dt;
+    }
+
+    // Quản lý Hạt Sen Hồng
+    if (!powerupItem.active) {
+        powerupItem.timer -= dt;
+        if (powerupItem.timer <= 0) spawnPowerup();
+    } else {
+        powerupItem.mesh.rotation.y += dt * 2.5;
+        powerupItem.mesh.position.y = 1.1 + Math.sin(clock.elapsedTime * 4) * 0.25;
+    }
+
+    // Cập nhật từng nhân vật
+    players.forEach((p, idx) => {
+        if (p.dashCooldown > 0) p.dashCooldown = Math.max(0, p.dashCooldown - dt);
+
+        // Hiệu ứng Khổng Lồ
+        if (p.powerupTimer > 0) {
+            p.powerupTimer -= dt;
+            p.mass = 1.85; p.radius = 1.65;
+            p.mesh.scale.lerp(new THREE.Vector3(1.45, 1.45, 1.45), 0.1);
+        } else {
+            p.mass = 1.0; p.radius = 1.15;
+            p.mesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+        }
+
+        // Rơi xuống nước
+        if (p.isFalling) {
+            p.vel.y -= 32 * dt;
+            p.pos.addScaledVector(p.vel, dt);
+            p.mesh.position.copy(p.pos);
+            p.mesh.rotation.x += 5 * dt;
+
+            p.respawnTimer -= dt;
+            if (p.respawnTimer <= 0) {
+                p.mesh.rotation.x = 0;
+                spawnCharacter(p, idx);
+            }
+            return;
+        }
+
+        // Điều khiển Người chơi chính
+        if (!p.isBot) {
+            const moveDir = new THREE.Vector3();
+            if (keys['KeyW'] || keys['ArrowUp']) moveDir.z -= 1;
+            if (keys['KeyS'] || keys['ArrowDown']) moveDir.z += 1;
+            if (keys['KeyA'] || keys['ArrowLeft']) moveDir.x -= 1;
+            if (keys['KeyD'] || keys['ArrowRight']) moveDir.x += 1;
+
+            if (moveDir.lengthSq() > 0) {
+                moveDir.normalize();
+                p.vel.addScaledVector(moveDir, 32 * dt);
+            }
+
+            const dashBar = document.getElementById('dash-bar');
+            dashBar.style.width = `${((1.5 - p.dashCooldown) / 1.5) * 100}%`;
+        } else {
+            updateBotAI(p, dt);
+        }
+
+        // Cơ chế Map 3: Lực cuốn xoáy nước
+        if (mapCfg.hasWhirlpool) {
+            const tangent = new THREE.Vector3(-p.pos.z, 0, p.pos.x).normalize();
+            p.vel.addScaledVector(tangent, 9.5 * dt);
+        }
+
+        // Cơ chế Map 2: Đụng Cóc Vàng ở tâm bị nảy tung
+        if (mapCfg.hasCenterBumper) {
+            const distCenter = Math.hypot(p.pos.x, p.pos.z);
+            const minBumperDist = 2.4 + p.radius;
+            if (distCenter < minBumperDist && distCenter > 0.001) {
+                const nx = p.pos.x / distCenter;
+                const nz = p.pos.z / distCenter;
+                p.pos.x = nx * minBumperDist;
+                p.pos.z = nz * minBumperDist;
+                p.vel.x = nx * 26;
+                p.vel.z = nz * 26;
+                p.squash = 0.55;
+                frogBumperGroup.scale.set(1.25, 0.8, 1.25);
+                screenShake = 0.3;
+                sfx.playBump(1.4);
+                spawnParticles(new THREE.Vector3(nx * 2, 1.2, nz * 2), 0xf1c40f, 14, 9);
+            }
+        }
+
+        // Ma sát mặt sân theo từng Map
+        const damping = Math.pow(mapCfg.damping, dt);
+        p.vel.x *= damping;
+        p.vel.z *= damping;
+
+        p.pos.addScaledVector(p.vel, dt);
+        p.mesh.position.copy(p.pos);
+
+        // Xoay hướng nhân vật & Nhún nhảy
+        const speed = Math.hypot(p.vel.x, p.vel.z);
+        if (speed > 0.4) {
+            const targetAngle = Math.atan2(p.vel.x, p.vel.z);
+            let diff = targetAngle - p.mesh.rotation.y;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            p.mesh.rotation.y += diff * 12 * dt;
+            p.body.position.y = Math.abs(Math.sin(clock.elapsedTime * 12 + idx)) * 0.22;
+        } else {
+            p.body.position.y = 0;
+        }
+
+        p.squash += (1.0 - p.squash) * 12 * dt;
+        p.body.scale.set(1 / Math.sqrt(p.squash), p.squash, 1 / Math.sqrt(p.squash));
+
+        // Ăn Hạt Sen Hồng
+        if (powerupItem.active) {
+            const distToGem = Math.hypot(p.pos.x - powerupItem.pos.x, p.pos.z - powerupItem.pos.z);
+            if (distToGem < p.radius + 0.7) {
+                powerupItem.active = false;
+                powerupItem.mesh.visible = false;
+                powerupItem.timer = 6.5;
+                p.powerupTimer = 6.0;
+                p.squash = 1.5;
+                sfx.playPowerup();
+                spawnParticles(powerupItem.pos, 0xff9ff3, 18, 9);
+            }
+        }
+
+        // Rơi khỏi mép Lá Sen
+        const distFromCenter = Math.hypot(p.pos.x, p.pos.z);
+        if (distFromCenter > currentArenaRadius + 0.2) {
+            p.isFalling = true;
+            p.respawnTimer = 1.8;
+            p.vel.y = -4;
+            sfx.playSplash();
+            screenShake = 0.4;
+            spawnParticles(new THREE.Vector3(p.pos.x, -0.5, p.pos.z), 0x74b9ff, 22, 11);
+
+            if (p.lastHitBy !== null && p.lastHitBy !== p.id) {
+                const killer = players.find(k => k.id === p.lastHitBy);
+                if (killer) {
+                    killer.score += 1;
+                    renderScoreboard(killer.id);
+                    checkWinner();
+                }
+            } else {
+                const others = players.filter(o => o.id !== p.id && !o.isFalling);
+                if (others.length > 0) {
+                    others.sort((a, b) => a.pos.distanceTo(p.pos) - b.pos.distanceTo(p.pos));
+                    others[0].score += 1;
+                    renderScoreboard(others[0].id);
+                    checkWinner();
+                }
+            }
+        }
+    });
+
+    // Đàn hồi lại Tượng Cóc Vàng
+    frogBumperGroup.scale.lerp(new THREE.Vector3(1, 1, 1), 10 * dt);
+
+    // Xử lý va chạm giữa các nhân vật
+    for (let i = 0; i < players.length; i++) {
+        for (let j = i + 1; j < players.length; j++) {
+            const p1 = players[i], p2 = players[j];
+            if (p1.isFalling || p2.isFalling) continue;
+
+            const dx = p2.pos.x - p1.pos.x;
+            const dz = p2.pos.z - p1.pos.z;
+            const dist = Math.hypot(dx, dz);
+            const minDist = p1.radius + p2.radius;
+
+            if (dist < minDist && dist > 0.001) {
+                const nx = dx / dist, nz = dz / dist;
+                const overlap = minDist - dist;
+                p1.pos.x -= nx * overlap * 0.5; p1.pos.z -= nz * overlap * 0.5;
+                p2.pos.x += nx * overlap * 0.5; p2.pos.z += nz * overlap * 0.5;
+
+                const kx = p1.vel.x - p2.vel.x, kz = p1.vel.z - p2.vel.z;
+                const p = 2 * (nx * kx + nz * kz) / (p1.mass + p2.mass);
+                const impulse = Math.max(p * 1.38, 10.5);
+
+                p1.vel.x -= impulse * p2.mass * nx; p1.vel.z -= impulse * p2.mass * nz;
+                p2.vel.x += impulse * p1.mass * nx; p2.vel.z += impulse * p1.mass * nz;
+
+                p1.lastHitBy = p2.id; p2.lastHitBy = p1.id;
+                p1.squash = 0.65; p2.squash = 0.65;
+                screenShake = Math.min(impulse * 0.015, 0.35);
+                sfx.playBump(Math.min(impulse / 12, 1.5));
+
+                const hitPoint = new THREE.Vector3((p1.pos.x + p2.pos.x) / 2, 1.0, (p1.pos.z + p2.pos.z) / 2);
+                spawnParticles(hitPoint, 0xffeaa7, 10, 7);
+            }
+        }
+    }
+}
+
+/**
+ * VÒNG LẶP ĐỒ HỌA CHÍNH
+ */
+function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.1);
+    const elapsed = clock.elapsedTime;
+
+    updateGame(dt);
+
+    // Hiệu ứng nhấp nháy vòng định vị dưới chân người chơi chính
+    if (players[0].playerRing) {
+        const pulse = 1 + Math.sin(elapsed * 6) * 0.06;
+        players[0].playerRing.scale.set(pulse, 1, pulse);
+    }
+
+    // Sóng nước
+    const posAttr = waterGeo.attributes.position;
+    for (let i = 0; i < posAttr.count; i++) {
+        const x = posAttr.getX(i), z = posAttr.getZ(i);
+        posAttr.setY(i, Math.sin(x * 0.25 + elapsed * 2) * 0.18 + Math.cos(z * 0.25 + elapsed * 1.5) * 0.18);
+    }
+    posAttr.needsUpdate = true;
+
+    bgFlowers.forEach((f, idx) => {
+        f.position.y = Math.sin(elapsed * 2 + idx) * 0.12;
+        f.rotation.y += 0.15 * dt;
+    });
+
+    // Hạt Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const pt = particles[i];
+        pt.vel.y -= 22 * dt;
+        pt.mesh.position.addScaledVector(pt.vel, dt);
+        pt.life -= 1.8 * dt;
+        pt.mesh.scale.setScalar(Math.max(pt.life, 0.01));
+        if (pt.life <= 0) {
+            scene.remove(pt.mesh);
+            particles.splice(i, 1);
+        }
+    }
+
+    // Camera bám theo nhân vật của bạn
+    if (screenShake > 0) screenShake = Math.max(0, screenShake - dt * 1.8);
+    const shakeX = (Math.random() - 0.5) * screenShake;
+    const shakeY = (Math.random() - 0.5) * screenShake;
+
+    const p0 = players[0];
+    const targetCamX = p0.pos.x * 0.22 + shakeX;
+    const targetCamZ = cameraBasePos.z + p0.pos.z * 0.22;
+    camera.position.x += (targetCamX - camera.position.x) * 5 * dt;
+    camera.position.z += (targetCamZ - camera.position.z) * 5 * dt;
+    camera.position.y = cameraBasePos.y + shakeY;
+    camera.lookAt(p0.pos.x * 0.12, 0, p0.pos.z * 0.12);
+
+    renderer.render(scene, camera);
+    updateFloatingLabels();
+}
+
+/**
+ * SỰ KIỆN CHỌN BẢN ĐỒ & BẮT ĐẦU GAME
+ */
+const mapCards = document.querySelectorAll('.map-card');
+mapCards.forEach(card => {
+    card.addEventListener('click', () => {
+        mapCards.forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedMapIndex = parseInt(card.getAttribute('data-map'));
+        applyMapConfig(selectedMapIndex);
+    });
+});
+
+function startNewMatch() {
+    sfx.init();
+    applyMapConfig(selectedMapIndex);
+    document.getElementById('overlay').style.display = 'none';
+    players.forEach((p, idx) => {
+        p.score = 0;
+        spawnCharacter(p, idx);
+    });
+    renderScoreboard();
+    powerupItem.active = false;
+    powerupItem.mesh.visible = false;
+    powerupItem.timer = 2.5;
+    gameRunning = true;
+}
+
+document.getElementById('start-btn').addEventListener('click', startNewMatch);
+
+// Nút Đổi Map nhanh ngay trong trận
+document.getElementById('change-map-btn').addEventListener('click', () => {
+    gameRunning = false;
+    document.getElementById('modal-title').innerText = "🗺️ CHỌN BẢN ĐỒ ĐẤU TRƯỜNG";
+    document.getElementById('modal-desc').innerText = "Mỗi bản đồ có hiệu ứng thời tiết và chướng ngại vật riêng biệt:";
+    document.getElementById('start-btn').innerText = "BẮT ĐẦU VỚI MAP NÀY";
+    document.getElementById('overlay').style.display = 'flex';
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+applyMapConfig(0);
+players.forEach((p, idx) => spawnCharacter(p, idx));
+animate();
+</script>
+</body>
+</html>
